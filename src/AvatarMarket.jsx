@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as THREE from "three";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   Search, Star, Heart, ShoppingCart, ChevronLeft, RotateCcw,
   ZoomIn, ZoomOut, Check, SlidersHorizontal, X, ShieldCheck,
@@ -59,14 +59,17 @@ const CATEGORIES = ["All", "Anthro", "Cyber", "Fantasy", "Mecha", "Original"];
 const PLATFORMS = ["All", "PC", "Quest"];
 const SORT_KEYS = ["popular", "newest", "price_low", "price_high", "top_rated"];
 
-// Mapeo de avatares a archivos FBX
+// Mapeo de avatares a modelos GLB, servidos vía raw.githubusercontent.com
+// (esta ruta sí manda access-control-allow-origin: *, a diferencia de los
+// assets de GitHub Releases, que no tienen CORS habilitado).
+const BASE_MODEL_URL = "https://raw.githubusercontent.com/respuestademostracionweb-blip/vr-page/main/models";
 const AVATAR_MODELS = {
-  "a1": "gato.fbx",      // Mystic Cat
-  "a2": "perro.fbx",     // Cyber Dog
-  "a3": "mago.fbx",      // Arcane Wizard
-  "a4": "robot.fbx",     // Battle Robot
-  "a5": "señora.fbx",    // Elegant Lady
-  "a6": "taza.fbx",      // Cozy Mug
+  "a1": `${BASE_MODEL_URL}/gato.glb`,      // Mystic Cat
+  "a2": `${BASE_MODEL_URL}/perro.glb`,     // Cyber Dog
+  "a3": `${BASE_MODEL_URL}/mago.glb`,      // Arcane Wizard
+  "a4": `${BASE_MODEL_URL}/robot.glb`,     // Battle Robot
+  "a5": `${BASE_MODEL_URL}/mujer.glb`,     // Elegant Lady
+  "a6": `${BASE_MODEL_URL}/taza.glb`,      // Cozy Mug
 };
 
 /* ============================================================================
@@ -659,46 +662,46 @@ function Storefront({ onSelect, favorites, toggleFavorite, cartCount, lang, setL
 /* ============================================================================
    3D AVATAR VIEWER — Three.js turntable, drag-to-rotate + zoom controls
 ============================================================================ */
-function loadFBXModel(avatar, onLoaded, onError, setLoading, setError) {
-  const modelFile = AVATAR_MODELS[avatar.id];
-  
-  if (!modelFile) {
-    console.log(`No FBX model found for ${avatar.id}, using procedural model`);
+function loadAvatarModel(avatar, onLoaded, onError, setLoading, setError) {
+  const modelUrl = AVATAR_MODELS[avatar.id];
+
+  if (!modelUrl) {
+    console.log(`No GLB model found for ${avatar.id}, using procedural model`);
     setLoading(false);
     onLoaded(buildCharacter(avatar));
     return;
   }
 
-  const loader = new FBXLoader();
-  const modelPath = `/models/${modelFile}`;
-  
-  console.log(`Attempting to load ${modelPath} for ${avatar.name}`);
+  const loader = new GLTFLoader();
+
+  console.log(`Attempting to load ${modelUrl} for ${avatar.name}`);
   setLoading(true);
   setError(false);
-  
+
   loader.load(
-    modelPath,
-    (object) => {
-      console.log(`Successfully loaded ${modelFile}`, object);
-      
+    modelUrl,
+    (gltf) => {
+      const object = gltf.scene;
+      console.log(`Successfully loaded ${modelUrl}`, object);
+
       // Normalizar el modelo primero
       const box = new THREE.Box3().setFromObject(object);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
-      
+
       // Calcular escala apropiada
       const maxDim = Math.max(size.x, size.y, size.z);
       const targetSize = 2.5; // Tamaño objetivo
-      const scale = targetSize / maxDim;
-      
+      const scale = maxDim > 0 ? targetSize / maxDim : 1;
+
       // Aplicar escala
       object.scale.set(scale, scale, scale);
-      
+
       // Centrar el modelo y elevarlo para mejor visibilidad
       object.position.x = -center.x * scale;
       object.position.y = -center.y * scale + 0.5; // Elevado 0.5 unidades
       object.position.z = -center.z * scale;
-      
+
       // Aplicar materiales con los colores del avatar (conservando texturas si existen)
       object.traverse((child) => {
         if (child.isMesh) {
@@ -718,19 +721,19 @@ function loadFBXModel(avatar, onLoaded, onError, setLoading, setError) {
           child.receiveShadow = true;
         }
       });
-      
+
       setLoading(false);
       onLoaded(object);
     },
     (progress) => {
       if (progress.lengthComputable) {
         const percent = (progress.loaded / progress.total) * 100;
-        console.log(`Loading ${modelFile}: ${percent.toFixed(1)}%`);
+        console.log(`Loading ${modelUrl}: ${percent.toFixed(1)}%`);
       }
     },
     (error) => {
-      console.error(`Error loading ${modelFile}:`, error);
-      console.log(`Falling back to procedural model for ${avatar.name}`);
+      console.error(`Error loading ${modelUrl}:`, error);
+      console.log(`Falling back to procedural model for ${avatar.name}. If this is a CORS error, see the AVATAR_MODELS comment above.`);
       setError(true);
       setLoading(false);
       // Fallback al modelo procedural
@@ -937,8 +940,8 @@ function AvatarViewer({ avatar, t }) {
     
     let character;
     
-    // Cargar modelo FBX o usar modelo procedural
-    loadFBXModel(avatar, (loadedCharacter) => {
+    // Cargar modelo GLB o usar modelo procedural
+    loadAvatarModel(avatar, (loadedCharacter) => {
       character = loadedCharacter;
       scene.add(character);
       
