@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import {
   Search, Star, Heart, ShoppingCart, ChevronLeft, RotateCcw,
   ZoomIn, ZoomOut, Check, SlidersHorizontal, X, ShieldCheck,
   Boxes, Sparkles, Play, Pause, Grid3x3, Globe, Zap,
-  Trash2, Loader2, CheckCircle2, Minus, Plus
+  Trash2, Loader2, CheckCircle2, Minus, Plus, Image as ImageIcon
 } from "lucide-react";
 
 /* ============================================================================
@@ -102,6 +103,8 @@ const STRINGS = {
     backToShop: "Back to shop",
     inCart: "in cart",
     modelInspector: "MODEL INSPECTOR — UNIT",
+    view3D: "3D",
+    viewPhoto: "Photo",
     dragRotate: "Drag to rotate",
     scrollZoom: "Scroll to zoom",
     reviews: "reviews",
@@ -156,6 +159,8 @@ const STRINGS = {
     backToShop: "Volver a la tienda",
     inCart: "en el carrito",
     modelInspector: "INSPECTOR DE MODELO — UNIDAD",
+    view3D: "3D",
+    viewPhoto: "Foto",
     dragRotate: "Arrastra para rotar",
     scrollZoom: "Desplaza para hacer zoom",
     reviews: "reseñas",
@@ -673,6 +678,12 @@ function loadAvatarModel(avatar, onLoaded, onError, setLoading, setError) {
   }
 
   const loader = new GLTFLoader();
+  // Necesario en caso de que el .glb esté comprimido con Draco (común al usar
+  // `gltf-transform optimize --compress draco`). Si el modelo no usa Draco,
+  // este loader simplemente no se activa — no hay ningún costo en dejarlo.
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
+  loader.setDRACOLoader(dracoLoader);
 
   console.log(`Attempting to load ${modelUrl} for ${avatar.name}`);
   setLoading(true);
@@ -732,8 +743,10 @@ function loadAvatarModel(avatar, onLoaded, onError, setLoading, setError) {
       }
     },
     (error) => {
-      console.error(`Error loading ${modelUrl}:`, error);
-      console.log(`Falling back to procedural model for ${avatar.name}. If this is a CORS error, see the AVATAR_MODELS comment above.`);
+      console.error(`❌ Error loading GLB model "${modelUrl}" for ${avatar.name}:`);
+      console.error(error?.message || error);
+      console.error("Full error object:", error);
+      console.log(`Falling back to procedural model for ${avatar.name}.`);
       setError(true);
       setLoading(false);
       // Fallback al modelo procedural
@@ -1092,11 +1105,34 @@ function AvatarViewer({ avatar, t }) {
 }
 
 /* ============================================================================
+   STATIC AVATAR IMAGE — shown in place of the 3D viewer when it's toggled off.
+   Falls back to the procedural glyph if no photo is available or it fails.
+============================================================================ */
+function StaticAvatarImage({ avatar }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="viewer-frame" style={{ width: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {avatar.image && !failed ? (
+        <img
+          src={avatar.image}
+          alt={avatar.name}
+          onError={() => setFailed(true)}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      ) : (
+        <AvatarGlyph avatar={avatar} size={220} />
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
    DETAIL PAGE — Textured Skeuomorphic / Tactile UI
 ============================================================================ */
 function DetailPage({ avatar, onBack, favorites, toggleFavorite, onAddToCart, cartCount, lang, setLang, onOpenCart }) {
   const t = STRINGS[lang];
   const [tab, setTab] = useState("Description");
+  const [show3D, setShow3D] = useState(true);
   const [added, setAdded] = useState(false);
 
   const handleAdd = () => {
@@ -1135,10 +1171,28 @@ function DetailPage({ avatar, onBack, favorites, toggleFavorite, onAddToCart, ca
         <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 26 }}>
           {/* Left: viewer */}
           <div className="store-sidebar-card neo-border neo-shadow" style={{ padding: 18, position: "relative" }}>
-            <div className="store-filter-label" style={{ marginBottom: 10, fontSize: ".8rem", letterSpacing: ".08em" }}>
-              {t.modelInspector}&nbsp;{avatar.id.toUpperCase()}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+              <div className="store-filter-label" style={{ fontSize: ".8rem", letterSpacing: ".08em" }}>
+                {t.modelInspector}&nbsp;{avatar.id.toUpperCase()}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  className={`store-chip ${show3D ? "active" : ""}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: ".32rem .75rem" }}
+                  onClick={() => setShow3D(true)}
+                >
+                  <Boxes size={13} /> {t.view3D}
+                </button>
+                <button
+                  className={`store-chip ${!show3D ? "active" : ""}`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: ".32rem .75rem" }}
+                  onClick={() => setShow3D(false)}
+                >
+                  <ImageIcon size={13} /> {t.viewPhoto}
+                </button>
+              </div>
             </div>
-            <AvatarViewer avatar={avatar} t={t} />
+            {show3D ? <AvatarViewer avatar={avatar} t={t} /> : <StaticAvatarImage avatar={avatar} />}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
               {avatar.formats.map((f) => <span key={f} className="store-chip" style={{ padding: ".18rem .6rem", fontSize: ".72rem" }}>{f}</span>)}
               <span className="store-chip" style={{ padding: ".18rem .6rem", fontSize: ".72rem" }}>{avatar.polycount}</span>
